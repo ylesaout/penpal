@@ -158,7 +158,7 @@ const connectCallSender = (
   methodNames,
   destructionPromise
 ) => {
-  const { localName, local, remote, remoteOrigin } = info;
+  const { localName, local, remote, remoteSourceOrigin, remoteTargetOrigin } = info;
   let destroyed = false;
 
   log(`${localName}: Connecting call sender`);
@@ -180,7 +180,7 @@ const connectCallSender = (
         const handleMessageEvent = event => {
           if (
             event.source === remote &&
-            event.origin === remoteOrigin &&
+            event.origin === remoteSourceOrigin &&
             event.data.penpal === REPLY &&
             event.data.id === id
           ) {
@@ -207,7 +207,7 @@ const connectCallSender = (
             methodName,
             args
           },
-          remoteOrigin
+          remoteTargetOrigin
         );
       });
     };
@@ -234,7 +234,7 @@ const connectCallSender = (
  * @returns {Function} A function that may be called to disconnect the receiver.
  */
 const connectCallReceiver = (info, methods, destructionPromise) => {
-  const { localName, local, remote, remoteOrigin } = info;
+  const { localName, local, remote, remoteSourceOrigin, remoteTargetOrigin } = info;
   let destroyed = false;
 
   log(`${localName}: Connecting call receiver`);
@@ -242,7 +242,7 @@ const connectCallReceiver = (info, methods, destructionPromise) => {
   const handleMessageEvent = event => {
     if (
       event.source === remote &&
-      event.origin === remoteOrigin &&
+      event.origin === remoteSourceOrigin &&
       event.data.penpal === CALL
     ) {
       const { methodName, args, id } = event.data;
@@ -279,7 +279,7 @@ const connectCallReceiver = (info, methods, destructionPromise) => {
             }
 
             try {
-              remote.postMessage(message, remoteOrigin);
+              remote.postMessage(message, remoteTargetOrigin);
             } catch (err) {
               // If a consumer attempts to send an object that's not cloneable (e.g., window),
               // we want to ensure the receiver's promise gets rejected.
@@ -292,7 +292,7 @@ const connectCallReceiver = (info, methods, destructionPromise) => {
                     returnValue: serializeError(err),
                     returnValueIsError: true
                   },
-                  remoteOrigin
+                  remoteTargetOrigin
                 );
               }
 
@@ -387,24 +387,25 @@ Penpal.connectToChild = ({ url, appendTo, methods = {}, timeout }) => {
       ) {
         log('Parent: Received handshake, sending reply');
 
-        // If event.origin is "null", the remote protocol is file: 
+        // If event.origin is "null", the remote protocol is file:
         // and we must post messages with "*" as targetOrigin [1]
         // [1] https://developer.mozilla.org/fr/docs/Web/API/Window/postMessage#Utiliser_window.postMessage_dans_les_extensions
-        const remoteOrigin = event.origin === "null" ? "*" : event.origin;
+        const remoteTargetOrigin = event.origin === "null" ? "*" : event.origin;
 
         event.source.postMessage(
           {
             penpal: HANDSHAKE_REPLY,
             methodNames: Object.keys(methods)
           },
-          remoteOrigin
+          remoteTargetOrigin
         );
 
         const info = {
           localName: 'Parent',
           local: parent,
           remote: child,
-          remoteOrigin: remoteOrigin
+          remoteSourceOrigin: event.origin,
+          remoteTargetOrigin: remoteTargetOrigin
         };
 
         // If the child reconnected, we need to destroy the previous call receiver before setting
@@ -532,7 +533,8 @@ Penpal.connectToParent = ({
           localName: 'Child',
           local: child,
           remote: parent,
-          remoteOrigin: event.origin
+          remoteSourceOrigin: event.origin,
+          remoteTargetOrigin: parentOrigin
         };
 
         const callSender = {};
